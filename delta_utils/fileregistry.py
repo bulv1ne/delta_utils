@@ -25,13 +25,14 @@ class S3FullScan:
     spark: SparkSession
 
     def __post_init__(self) -> None:
+        self.delta_table = DeltaTable(self.file_registry_path, self.spark)
+
         self.schema = T.StructType(
             [
                 T.StructField("file_path", T.StringType(), True),
                 T.StructField("date_lifted", T.TimestampType(), True),
             ]
         )
-        self._get_or_create()
 
     def update(self, paths: List[str] = None) -> None:
         """Update file registry column date_lifted to current date."""
@@ -40,15 +41,24 @@ class S3FullScan:
         else:
             statement = F.col("date_lifted").isNull()
 
-        self.delta_table.delta_table.update(
-            statement, {"date_lifted": F.lit(datetime.now())}
-        )
+        df = self.spark.read.load(self.file_registry_path).where(statement)
+        df.createOrReplaceTempView("tmptable")
+
+        sql_statement = [
+            f"MERGE INTO delta.`{self.file_registry_path}` source",
+            "USING tmptable updates",
+            "ON source.file_path = updates.file_path",
+            "WHEN MATCHED THEN UPDATE SET date_lifted = current_timestamp()",
+        ]
+
+        self.spark.sql(" ".join(sql_statement))
+        self.spark.catalog.dropTempView("tmptable")
 
     def load(self, s3_path: str, suffix: str) -> List[str]:
         """Fetch new filepaths that have not been lifted from s3."""
         list_of_rows = self._get_new_s3_files(s3_path, suffix)
-        updated_dataframe = self._update_file_registry(list_of_rows)
-        list_of_paths = self._get_files_to_lift(updated_dataframe)
+        self._update_file_registry(list_of_rows)
+        list_of_paths = self._get_files_to_lift()
 
         LOGGER.info("Found %s new keys in s3", len(list_of_paths))
 
@@ -57,24 +67,13 @@ class S3FullScan:
     ###########
     # PRIVATE #
     ###########
-    def _get_or_create(self):
-        """Get or create a delta table instance for a file registry."""
-        dataframe = self.fetch_file_registry(self.file_registry_path, self.spark)
-
-        # If file registry is found
-        if not dataframe:
-            LOGGER.info(f"No registry found create one at {self.file_registry_path}")
-            self._create_file_registry()
-        else:
-            LOGGER.info(f"File registry found at {self.file_registry_path}")
-
-        self.delta_table = DeltaTable(self.file_registry_path, self.spark)
-
-    @staticmethod
-    def _get_files_to_lift(dataframe: DataFrame) -> List[str]:
+    def _get_files_to_lift(self) -> List[str]:
         """Get a list of S3 paths from the file registry that needs to be lifted."""
         data = (
-            dataframe.where(F.col("date_lifted").isNull()).select("file_path").collect()
+            self.spark.read.load(self.file_registry_path)
+            .where(F.col("date_lifted").isNull())
+            .select("file_path")
+            .collect()
         )
 
         return [row.file_path for row in data]
@@ -83,10 +82,16 @@ class S3FullScan:
         """Update the file registry and do not insert duplicates."""
         updates_df = self._rows_to_dataframe(list_of_rows)
 
-        # Update the file registry
-        return self.delta_table.insert_all(
-            updates_df, "source.file_path = updates.file_path"
-        )
+        updates_df.createOrReplaceTempView("tmptable")
+        sql_statement = [
+            f"MERGE INTO delta.`{self.file_registry_path}` source",
+            "USING tmptable updates",
+            "ON source.file_path = updates.file_path",
+            "WHEN NOT MATCHED THEN INSERT *",
+        ]
+
+        self.spark.sql(" ".join(sql_statement))
+        self.spark.catalog.dropTempView("tmptable")
 
     @staticmethod
     def _get_new_s3_files(s3_path: str, suffix: str) -> List[FileRegistryRow]:
@@ -117,7 +122,6 @@ class S3FullScan:
         """When there is now existing file registry create one."""
         dataframe = self.spark.createDataFrame([], self.schema)
 
-        breakpoint()
         dataframe.write.save(
             path=self.file_registry_path, format="delta", mode="overwrite"
         )

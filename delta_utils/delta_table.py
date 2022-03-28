@@ -1,9 +1,12 @@
 """Module for handling delta table operations."""
 from dataclasses import dataclass
+
 from pyspark.sql import DataFrame, SparkSession
+
 from delta_utils.logger import get_logger
 
 LOGGER = get_logger(__name__)
+
 
 @dataclass
 class DeltaTable:
@@ -14,7 +17,13 @@ class DeltaTable:
 
     def __post_init__(self) -> None:
         """Initialize the delta table."""
-        self.delta_table = self._create_delta_table()
+        self.spark.sql(
+            f"""
+        CREATE TABLE IF NOT EXISTS delta.`{self.path}`
+        (file_path STRING, date_lifted TIMESTAMP)
+        USING delta
+        """
+        )
 
     def upsert_all(self, updates_df: DataFrame, merge_statement: str) -> DataFrame:
         """Update and insert all rows and columns."""

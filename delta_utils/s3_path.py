@@ -1,6 +1,8 @@
 from typing import Iterator, Optional, Union
-from tqdm import tqdm
+
 import boto3
+from tqdm import tqdm
+
 from delta_utils.errors import handle_client_error
 
 
