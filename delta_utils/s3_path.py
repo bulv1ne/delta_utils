@@ -2,8 +2,6 @@ from typing import Iterator, Optional, Union
 
 import boto3
 
-from delta_utils.errors import handle_client_error
-
 
 class S3Path:
     def __init__(self, path: str):
@@ -56,20 +54,18 @@ class S3Path:
         return False
 
     def read_bytes(self) -> bytes:
-        with handle_client_error():
-            s3_object = self._s3_client.get_object(Bucket=self.bucket, Key=self.key)
-            return s3_object["Body"].read()
+        s3_object = self._s3_client.get_object(Bucket=self.bucket, Key=self.key)
+        return s3_object["Body"].read()
 
     def read_text(self, encoding="utf-8") -> str:
         return self.read_bytes().decode(encoding)
 
     def write_bytes(self, data: bytes):
-        with handle_client_error():
-            self._s3_client.put_object(
-                Bucket=self.bucket,
-                Key=self.key,
-                Body=data,
-            )
+        self._s3_client.put_object(
+            Bucket=self.bucket,
+            Key=self.key,
+            Body=data,
+        )
 
     def write_text(self, data: str, encoding="utf-8"):
         self.write_bytes(data.encode(encoding))
@@ -97,12 +93,11 @@ class S3Path:
             target = S3Path(target)
 
         # Copy the file from the source key to the target key
-        with handle_client_error():
-            self._s3_client.copy(
-                {"Bucket": self.bucket, "Key": self.key},
-                target.bucket,
-                target.key,
-            )
+        self._s3_client.copy(
+            {"Bucket": self.bucket, "Key": self.key},
+            target.bucket,
+            target.key,
+        )
 
     def delete(self) -> None:
         if "husqvarna-datalake/raw/" in self.key:
@@ -110,5 +105,4 @@ class S3Path:
             raise PermissionError(
                 "Access Denied: Not possible to remove files from raw layer"
             )
-        with handle_client_error():
-            self._s3_client.delete_object(Bucket=self.bucket, Key=self.key)
+        self._s3_client.delete_object(Bucket=self.bucket, Key=self.key)

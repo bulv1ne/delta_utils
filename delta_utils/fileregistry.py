@@ -1,16 +1,13 @@
 """File registry that works with a prefix in S3."""
 from collections import namedtuple
 from dataclasses import dataclass
-from typing import List, Union
+from typing import List
 
 from pyspark.sql import DataFrame, SparkSession, functions as F, types as T
 
-from delta_utils.errors import handle_delta_files_dont_exist
-from delta_utils.logger import get_logger
 from delta_utils.s3_path import S3Path
 
 # pylint: disable=E1101,W0221
-LOGGER = get_logger(__name__)
 FileRegistryRow = namedtuple("FileRegistryRow", "file_path, date_lifted")
 
 
@@ -63,8 +60,6 @@ class S3FullScan:
         self._update_file_registry(list_of_rows)
         list_of_paths = self._get_files_to_lift()
 
-        LOGGER.info("Found %s new keys in s3", len(list_of_paths))
-
         return list_of_paths
 
     ###########
@@ -76,6 +71,7 @@ class S3FullScan:
             self.spark.read.load(self.file_registry_path)
             .where(F.col("date_lifted").isNull())
             .select("file_path")
+            .orderBy("file_path")
             .collect()
         )
 
@@ -105,29 +101,7 @@ class S3FullScan:
         # Convert keys into a file registry row
         list_of_rows = [FileRegistryRow(key, None) for key in keys]
 
-        # Keys found under the s3_path
-        LOGGER.info("Search %s for files. Found: %s files", s3_path, len(list_of_rows))
-
         return list_of_rows
-
-    def fetch_file_registry(
-        self, path: str, spark: SparkSession
-    ) -> Union[DataFrame, None]:
-        """Return a dataframe if one can be found otherwise None."""
-        with handle_delta_files_dont_exist():
-            dataframe = spark.read.load(path, format="delta")
-            if not dataframe.rdd.isEmpty():
-                return dataframe
-
-        return None
-
-    def _create_file_registry(self):
-        """When there is now existing file registry create one."""
-        dataframe = self.spark.createDataFrame([], self.schema)
-
-        dataframe.write.save(
-            path=self.file_registry_path, format="delta", mode="overwrite"
-        )
 
     def _rows_to_dataframe(self, rows: List[FileRegistryRow]) -> DataFrame:
         """Create a dataframe from a list of paths with the file registry schema."""
