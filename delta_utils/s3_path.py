@@ -1,7 +1,6 @@
 from typing import Iterator, Optional, Union
 
 import boto3
-from tqdm import tqdm
 
 from delta_utils.errors import handle_client_error
 
@@ -29,7 +28,7 @@ class S3Path:
         if len(result) > 1:
             self.key = result[1]
         else:
-            self.key = None
+            self.key = ""
 
         self._s3_client = boto3.client("s3")
 
@@ -57,12 +56,9 @@ class S3Path:
         return False
 
     def read_bytes(self) -> bytes:
-        try:
-            with handle_client_error():
-                s3_object = self._s3_client.get_object(Bucket=self.bucket, Key=self.key)
-                return s3_object["Body"].read()
-        except FileNotFoundError:
-            pass
+        with handle_client_error():
+            s3_object = self._s3_client.get_object(Bucket=self.bucket, Key=self.key)
+            return s3_object["Body"].read()
 
     def read_text(self, encoding="utf-8") -> str:
         return self.read_bytes().decode(encoding)
@@ -78,7 +74,7 @@ class S3Path:
     def write_text(self, data: str, encoding="utf-8"):
         self.write_bytes(data.encode(encoding))
 
-    def glob(self, suffix: str = "") -> Iterator["S3Path"]:
+    def glob(self, suffix: str = "") -> Iterator[str]:
         """Retrieve the keys from an s3 path with suffix
 
         Args:
@@ -88,23 +84,13 @@ class S3Path:
             Iterator[S3Path]
         """
 
-        kwargs = {
-            "Bucket": self.bucket,
-            "Prefix": self.key,
-        }
-        while True:
-            resp = self._s3_client.list_objects_v2(**kwargs)
-
+        paginator = self._s3_client.get_paginator("list_objects_v2")
+        for resp in paginator.paginate(Bucket=self.bucket, Prefix=self.key):
             if "Contents" in resp:
                 for obj in resp["Contents"]:
                     key = obj["Key"]
                     if not suffix or key.endswith(suffix):
                         yield f"s3://{self.bucket}/{key}"
-
-            try:
-                kwargs["ContinuationToken"] = resp["NextContinuationToken"]
-            except KeyError:
-                break
 
     def copy(self, target: Union[str, "S3Path"]) -> None:
         if not isinstance(target, S3Path):

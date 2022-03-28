@@ -1,7 +1,6 @@
 from datetime import datetime
 
 import boto3
-from moto import mock_s3
 from pyspark.sql import functions as F
 
 from delta_utils.fileregistry import S3FullScan

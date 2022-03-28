@@ -1,13 +1,10 @@
 """File registry that works with a prefix in S3."""
 from collections import namedtuple
 from dataclasses import dataclass
-from datetime import datetime
 from typing import List, Union
 
 from pyspark.sql import DataFrame, SparkSession, functions as F, types as T
-from tqdm import tqdm
 
-from delta_utils.delta_table import DeltaTable
 from delta_utils.errors import handle_delta_files_dont_exist
 from delta_utils.logger import get_logger
 from delta_utils.s3_path import S3Path
@@ -25,7 +22,13 @@ class S3FullScan:
     spark: SparkSession
 
     def __post_init__(self) -> None:
-        self.delta_table = DeltaTable(self.file_registry_path, self.spark)
+        self.spark.sql(
+            f"""
+        CREATE TABLE IF NOT EXISTS delta.`{self.file_registry_path}`
+        (file_path STRING, date_lifted TIMESTAMP)
+        USING delta
+        """
+        )
 
         self.schema = T.StructType(
             [
@@ -78,7 +81,7 @@ class S3FullScan:
 
         return [row.file_path for row in data]
 
-    def _update_file_registry(self, list_of_rows: List[FileRegistryRow]) -> DataFrame:
+    def _update_file_registry(self, list_of_rows: List[FileRegistryRow]):
         """Update the file registry and do not insert duplicates."""
         updates_df = self._rows_to_dataframe(list_of_rows)
 
@@ -97,7 +100,7 @@ class S3FullScan:
     def _get_new_s3_files(s3_path: str, suffix: str) -> List[FileRegistryRow]:
         """Get all files in S3 as a dataframe."""
         base_s3path = S3Path(s3_path)
-        keys = tqdm(base_s3path.glob(suffix))
+        keys = base_s3path.glob(suffix)
 
         # Convert keys into a file registry row
         list_of_rows = [FileRegistryRow(key, None) for key in keys]
