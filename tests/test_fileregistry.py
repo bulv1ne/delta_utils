@@ -1,7 +1,6 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import boto3
-from pyspark.sql import functions as F
 
 from delta_utils.fileregistry import S3FullScan
 
@@ -23,13 +22,12 @@ def test_load_fileregistry(spark, base_test_dir, mocked_s3_bucket_name):
     s3.put_object(Bucket=mocked_s3_bucket_name, Key="raw/file2.json", Body=b"test")
     s3.put_object(Bucket=mocked_s3_bucket_name, Key="raw/file3.xml", Body=b"test")
 
-    # act
+    # ACT
     file_paths = file_registry.load(
         f"s3://{mocked_s3_bucket_name}/raw/", suffix=".json"
     )
 
     # ASSERT
-    assert len(file_paths) == 2
     assert file_paths == [
         "s3://mybucket/raw/file1.json",
         "s3://mybucket/raw/file2.json",
@@ -53,9 +51,16 @@ def test_update_fileregistry_all(spark, base_test_dir, mocked_s3_bucket_name):
     file_registry.update()
 
     # ASSERT
-    df_res = spark.read.load(file_registry.file_registry_path)
-    assert df_res.where(F.col("date_lifted").isNotNull()).count() == 2
-    # TODO: add date check for file1.json
+    df_res = spark.read.load(file_registry.file_registry_path).orderBy("file_path")
+
+    result = {row["file_path"]: row["date_lifted"] for row in df_res.collect()}
+    now = datetime.utcnow()
+    assert (
+        now - timedelta(hours=1)
+        < result["s3://mybucket/raw/file1.json"]
+        < now + timedelta(hours=1)
+    )
+    assert result["s3://mybucket/raw/file2.json"] == datetime(2021, 11, 18)
 
 
 def test_update_fileregistry_single(spark, base_test_dir, mocked_s3_bucket_name):
@@ -75,6 +80,13 @@ def test_update_fileregistry_single(spark, base_test_dir, mocked_s3_bucket_name)
     file_registry.update(["s3://mybucket/raw/file2.json"])
 
     # ASSERT
-    df_res = spark.read.load(file_registry.file_registry_path)
-    assert df_res.where(F.col("date_lifted").isNotNull()).count() == 1
-    # TODO: add date check for file2.json
+    df_res = spark.read.load(file_registry.file_registry_path).orderBy("file_path")
+
+    result = {row["file_path"]: row["date_lifted"] for row in df_res.collect()}
+    now = datetime.utcnow()
+    assert result["s3://mybucket/raw/file1.json"] is None
+    assert (
+        now - timedelta(hours=1)
+        < result["s3://mybucket/raw/file2.json"]
+        < now + timedelta(hours=1)
+    )

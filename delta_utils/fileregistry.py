@@ -1,14 +1,9 @@
 """File registry that works with a prefix in S3."""
-from collections import namedtuple
+import boto3
 from dataclasses import dataclass
-from typing import List
+from typing import List, Tuple, Iterable
 
-from pyspark.sql import DataFrame, SparkSession, functions as F, types as T
-
-from delta_utils.s3_path import S3Path
-
-# pylint: disable=E1101,W0221
-FileRegistryRow = namedtuple("FileRegistryRow", "file_path, date_lifted")
+from pyspark.sql import SparkSession, functions as F, types as T
 
 
 @dataclass
@@ -35,7 +30,7 @@ class S3FullScan:
         )
 
     def update(self, paths: List[str] = None) -> None:
-        """Update file registry column date_lifted to current date."""
+        """Update file registry column date_lifted to current timestamp."""
         if paths:
             statement = F.col("file_path").isin(paths)
         else:
@@ -56,30 +51,25 @@ class S3FullScan:
 
     def load(self, s3_path: str, suffix: str) -> List[str]:
         """Fetch new filepaths that have not been lifted from s3."""
-        list_of_rows = self._get_new_s3_files(s3_path, suffix)
-        self._update_file_registry(list_of_rows)
+        keys = self._get_new_s3_files(s3_path, suffix)
+        self._update_file_registry(keys)
         list_of_paths = self._get_files_to_lift()
 
         return list_of_paths
 
-    ###########
-    # PRIVATE #
-    ###########
-    def _get_files_to_lift(self) -> List[str]:
-        """Get a list of S3 paths from the file registry that needs to be lifted."""
-        data = (
-            self.spark.read.load(self.file_registry_path)
-            .where(F.col("date_lifted").isNull())
-            .select("file_path")
-            .orderBy("file_path")
-            .collect()
-        )
+    @staticmethod
+    def _get_new_s3_files(s3_path: str, suffix: str) -> Iterable[str]:
+        """Get all files in S3 as a dataframe."""
+        # Remove s3://, s3a:// and /
+        s3_path = removeprefix(s3_path, "s3://", "s3a://", "/")
+        bucket, prefix = s3_path.split("/", 1)
+        return s3_list_objects_v2(bucket, prefix, suffix)
 
-        return [row.file_path for row in data]
-
-    def _update_file_registry(self, list_of_rows: List[FileRegistryRow]):
+    def _update_file_registry(self, keys: Iterable[str]):
         """Update the file registry and do not insert duplicates."""
-        updates_df = self._rows_to_dataframe(list_of_rows)
+        updates_df = self.spark.createDataFrame(
+            [(key, None) for key in keys], self.schema
+        )
 
         updates_df.createOrReplaceTempView("tmptable")
         sql_statement = [
@@ -92,17 +82,33 @@ class S3FullScan:
         self.spark.sql(" ".join(sql_statement))
         self.spark.catalog.dropTempView("tmptable")
 
-    @staticmethod
-    def _get_new_s3_files(s3_path: str, suffix: str) -> List[FileRegistryRow]:
-        """Get all files in S3 as a dataframe."""
-        base_s3path = S3Path(s3_path)
-        keys = base_s3path.glob(suffix)
+    def _get_files_to_lift(self) -> List[str]:
+        """Get a list of S3 paths from the file registry that needs to be lifted."""
+        data = (
+            self.spark.read.load(self.file_registry_path)
+            .where(F.col("date_lifted").isNull())
+            .select("file_path")
+            .orderBy("file_path")
+            .collect()
+        )
 
-        # Convert keys into a file registry row
-        list_of_rows = [FileRegistryRow(key, None) for key in keys]
+        return [row.file_path for row in data]
 
-        return list_of_rows
 
-    def _rows_to_dataframe(self, rows: List[FileRegistryRow]) -> DataFrame:
-        """Create a dataframe from a list of paths with the file registry schema."""
-        return self.spark.createDataFrame(rows, self.schema)
+def s3_list_objects_v2(bucket: str, prefix: str, suffix: str) -> Iterable[str]:
+    s3_client = boto3.client("s3")
+    paginator = s3_client.get_paginator("list_objects_v2")
+    for resp in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        if "Contents" in resp:
+            for obj in resp["Contents"]:
+                key = obj["Key"]
+                if not suffix or key.endswith(suffix):
+                    yield f"s3://{bucket}/{key}"
+
+
+def removeprefix(value: str, *prefixes: str) -> str:
+    """Works almost like str.removeprefix that comes with Python 3.9+"""
+    for prefix in prefixes:
+        while value.startswith(prefix):
+            value = value[len(prefix) :]
+    return value
