@@ -1,7 +1,7 @@
 """File registry that works with a prefix in S3."""
 import boto3
 from dataclasses import dataclass
-from typing import List, Tuple, Iterable
+from typing import List, Iterable
 
 from pyspark.sql import SparkSession, functions as F, types as T
 
