@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Iterable, List
 
-import boto3  # type: ignore
+import boto3
 from pyspark.sql import SparkSession, functions as F, types as T
 
 

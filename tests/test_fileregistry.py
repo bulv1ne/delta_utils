@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 
-import boto3  # type: ignore
+import boto3
 from pyspark.sql import functions as F
 
 from delta_utils.fileregistry import S3FullScan
