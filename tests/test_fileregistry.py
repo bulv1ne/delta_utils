@@ -71,6 +71,7 @@ def test_update_fileregistry_single(spark, base_test_dir, mocked_s3_bucket_name)
         [
             ("s3://mybucket/raw/file1.json", None),
             ("s3://mybucket/raw/file2.json", datetime(2021, 11, 18)),
+            ("s3://mybucket/raw/file3.json", None),
         ],
         ["file_path", "date_lifted"],
     )
@@ -85,6 +86,7 @@ def test_update_fileregistry_single(spark, base_test_dir, mocked_s3_bucket_name)
     result = {row["file_path"]: row["date_lifted"] for row in df_res.collect()}
     now = datetime.utcnow()
     assert result["s3://mybucket/raw/file1.json"] is None
+    assert result["s3://mybucket/raw/file3.json"] is None
     assert (
         now - timedelta(hours=1)
         < result["s3://mybucket/raw/file2.json"]
