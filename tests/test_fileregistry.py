@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 
-import boto3
+import boto3  # type: ignore
 
 from delta_utils.fileregistry import S3FullScan
 
@@ -55,11 +55,13 @@ def test_update_fileregistry_all(spark, base_test_dir, mocked_s3_bucket_name):
 
     result = {row["file_path"]: row["date_lifted"] for row in df_res.collect()}
     now = datetime.utcnow()
+
     assert (
-        now - timedelta(hours=1)
+        now - timedelta(hours=3)
         < result["s3://mybucket/raw/file1.json"]
-        < now + timedelta(hours=1)
+        < now + timedelta(hours=3)
     )
+
     assert result["s3://mybucket/raw/file2.json"] == datetime(2021, 11, 18)
 
 

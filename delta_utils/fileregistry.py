@@ -1,8 +1,10 @@
 """File registry that works with a prefix in S3."""
-import boto3
+import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import List, Iterable
+from typing import Iterable, List
 
+import boto3  # type: ignore
 from pyspark.sql import SparkSession, functions as F, types as T
 
 
@@ -37,17 +39,16 @@ class S3FullScan:
             statement = F.col("date_lifted").isNull()
 
         df = self.spark.read.load(self.file_registry_path).where(statement)
-        df.createOrReplaceTempView("tmptable")
 
-        sql_statement = [
-            f"MERGE INTO delta.`{self.file_registry_path}` source",
-            "USING tmptable updates",
-            "ON source.file_path = updates.file_path",
-            "WHEN MATCHED THEN UPDATE SET date_lifted = current_timestamp()",
-        ]
+        with create_tmp_table(df, self.spark) as table:
+            sql_statement = [
+                f"MERGE INTO delta.`{self.file_registry_path}` source",
+                f"USING {table} updates",
+                "ON source.file_path = updates.file_path",
+                "WHEN MATCHED THEN UPDATE SET date_lifted = current_timestamp()",
+            ]
 
-        self.spark.sql(" ".join(sql_statement))
-        self.spark.catalog.dropTempView("tmptable")
+            self.spark.sql(" ".join(sql_statement))
 
     def load(self, s3_path: str, suffix: str) -> List[str]:
         """Fetch new filepaths that have not been lifted from s3."""
@@ -71,16 +72,15 @@ class S3FullScan:
             [(key, None) for key in keys], self.schema
         )
 
-        updates_df.createOrReplaceTempView("tmptable")
-        sql_statement = [
-            f"MERGE INTO delta.`{self.file_registry_path}` source",
-            "USING tmptable updates",
-            "ON source.file_path = updates.file_path",
-            "WHEN NOT MATCHED THEN INSERT *",
-        ]
+        with create_tmp_table(updates_df, self.spark) as table:
+            sql_statement = [
+                f"MERGE INTO delta.`{self.file_registry_path}` source",
+                f"USING {table} updates",
+                "ON source.file_path = updates.file_path",
+                "WHEN NOT MATCHED THEN INSERT *",
+            ]
 
-        self.spark.sql(" ".join(sql_statement))
-        self.spark.catalog.dropTempView("tmptable")
+            self.spark.sql(" ".join(sql_statement))
 
     def _get_files_to_lift(self) -> List[str]:
         """Get a list of S3 paths from the file registry that needs to be lifted."""
@@ -112,3 +112,14 @@ def removeprefix(value: str, *prefixes: str) -> str:
         while value.startswith(prefix):
             value = value[len(prefix) :]
     return value
+
+
+@contextmanager
+def create_tmp_table(df, spark):
+    table = f"tmptable{uuid.uuid4().hex}"
+
+    try:
+        df.createOrReplaceTempView(table)
+        yield table
+    finally:
+        spark.catalog.dropTempView(table)
