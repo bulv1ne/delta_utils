@@ -2,6 +2,7 @@
 import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Iterable, List
 
 import boto3  # type: ignore
@@ -57,6 +58,20 @@ class S3FullScan:
         list_of_paths = self._get_files_to_lift()
 
         return list_of_paths
+
+    def clear(
+        self,
+        start: datetime = datetime(1900, 1, 1),
+        stop: datetime = datetime(2200, 1, 1),
+    ) -> None:
+        sql_statement = [
+            f"UPDATE delta.`{self.file_registry_path}`",
+            "SET date_lifted = NULL",
+            f"WHERE date_lifted >= '{start.strftime('%Y-%m-%d')}'",
+            f"AND date_lifted <= '{stop.strftime('%Y-%m-%d')}'",
+        ]
+
+        self.spark.sql(" ".join(sql_statement))
 
     @staticmethod
     def _get_new_s3_files(s3_path: str, suffix: str) -> Iterable[str]:

@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 
 import boto3  # type: ignore
+from pyspark.sql import functions as F
 
 from delta_utils.fileregistry import S3FullScan
 
@@ -94,3 +95,53 @@ def test_update_fileregistry_single(spark, base_test_dir, mocked_s3_bucket_name)
         < result["s3://mybucket/raw/file2.json"]
         < now + timedelta(hours=1)
     )
+
+
+def test_clear_fileregistry(spark, base_test_dir, mocked_s3_bucket_name):
+    # ARRANGE
+    file_registry = S3FullScan(f"{base_test_dir}fileregistry", spark)
+
+    df = spark.createDataFrame(
+        [
+            ("s3://mybucket/raw/file1.json", None),
+            ("s3://mybucket/raw/file2.json", datetime(2021, 11, 18)),
+            ("s3://mybucket/raw/file3.json", None),
+        ],
+        ["file_path", "date_lifted"],
+    )
+    df.write.save(file_registry.file_registry_path, format="delta", mode="append")
+
+    # ACT
+    file_registry.clear()
+
+    # ASSERT
+    df_res = spark.read.load(file_registry.file_registry_path).where(
+        F.col("date_lifted").isNull()
+    )
+
+    assert df_res.count() == 3
+
+
+def test_clear_fileregistry_start(spark, base_test_dir, mocked_s3_bucket_name):
+    # ARRANGE
+    file_registry = S3FullScan(f"{base_test_dir}fileregistry", spark)
+
+    df = spark.createDataFrame(
+        [
+            ("s3://mybucket/raw/file1.json", None),
+            ("s3://mybucket/raw/file2.json", datetime(2021, 11, 18)),
+            ("s3://mybucket/raw/file3.json", datetime(2021, 11, 19)),
+        ],
+        ["file_path", "date_lifted"],
+    )
+    df.write.save(file_registry.file_registry_path, format="delta", mode="append")
+
+    # ACT
+    file_registry.clear(start=datetime(2021, 11, 19))
+
+    # ASSERT
+    df_res = spark.read.load(file_registry.file_registry_path).where(
+        F.col("date_lifted").isNull()
+    )
+
+    assert df_res.count() == 2
