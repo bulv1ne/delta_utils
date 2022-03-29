@@ -3,7 +3,7 @@ import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Iterable, List
+from typing import Iterable, List, Optional
 
 import boto3
 from pyspark.sql import SparkSession, functions as F, types as T
@@ -61,15 +61,21 @@ class S3FullScan:
 
     def clear(
         self,
-        start: datetime = datetime(1900, 1, 1),
-        stop: datetime = datetime(2200, 1, 1),
+        start: Optional[datetime] = None,
+        stop: Optional[datetime] = None,
     ) -> None:
         sql_statement = [
             f"UPDATE delta.`{self.file_registry_path}`",
             "SET date_lifted = NULL",
-            f"WHERE date_lifted >= '{start.strftime('%Y-%m-%d')}'",
-            f"AND date_lifted <= '{stop.strftime('%Y-%m-%d')}'",
         ]
+        conditions = []
+        if start:
+            conditions.append(f"date_lifted >= '{start:%Y-%m-%d %H:%M:%S}'")
+        if stop:
+            conditions.append(f"date_lifted <= '{stop:%Y-%m-%d %H:%M:%S}'")
+        if conditions:
+            sql_statement.append("WHERE")
+            sql_statement.append(" AND ".join(conditions))
 
         self.spark.sql(" ".join(sql_statement))
 
