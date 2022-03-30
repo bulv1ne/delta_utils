@@ -106,6 +106,7 @@ def test_update_fileregistry_single(spark, base_test_dir, mocked_s3_bucket_name)
         (datetime(2021, 11, 19, 10, 0), None, 5),
         (datetime(2021, 11, 19, 10, 0), datetime(2021, 11, 19, 11), 2),
         (datetime(2021, 11, 19), datetime(2021, 11, 20), 5),
+        (None, datetime(2021, 11, 19, 10, 0), 4),
     ],
 )
 def test_clear_fileregistry_all(
