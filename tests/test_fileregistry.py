@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 
 import boto3
+import pytest
 from pyspark.sql import functions as F
 
 from delta_utils.fileregistry import S3FullScan
@@ -97,7 +98,19 @@ def test_update_fileregistry_single(spark, base_test_dir, mocked_s3_bucket_name)
     )
 
 
-def test_clear_fileregistry(spark, base_test_dir, mocked_s3_bucket_name):
+@pytest.mark.parametrize(
+    "start, stop, expected",
+    [
+        (None, None, 7),
+        (datetime(2021, 11, 19), None, 6),
+        (datetime(2021, 11, 19, 10, 0), None, 5),
+        (datetime(2021, 11, 19, 10, 0), datetime(2021, 11, 19, 11), 2),
+        (datetime(2021, 11, 19), datetime(2021, 11, 20), 5),
+    ],
+)
+def test_clear_fileregistry_all(
+    start, stop, expected, spark, base_test_dir, mocked_s3_bucket_name
+):
     # ARRANGE
     file_registry = S3FullScan(f"{base_test_dir}fileregistry", spark)
 
@@ -105,72 +118,22 @@ def test_clear_fileregistry(spark, base_test_dir, mocked_s3_bucket_name):
         [
             ("s3://mybucket/raw/file1.json", None),
             ("s3://mybucket/raw/file2.json", datetime(2021, 11, 18)),
-            ("s3://mybucket/raw/file3.json", None),
+            ("s3://mybucket/raw/file3.json", datetime(2021, 11, 19, 8, 0)),
+            ("s3://mybucket/raw/file4.json", datetime(2021, 11, 19, 10, 0)),
+            ("s3://mybucket/raw/file5.json", datetime(2021, 11, 19, 12, 0)),
+            ("s3://mybucket/raw/file6.json", datetime(2021, 11, 20)),
+            ("s3://mybucket/raw/file7.json", datetime(2021, 11, 21)),
         ],
         ["file_path", "date_lifted"],
     )
     df.write.save(file_registry.file_registry_path, format="delta", mode="append")
 
     # ACT
-    file_registry.clear()
+    file_registry.clear(start, stop)
 
     # ASSERT
     df_res = spark.read.load(file_registry.file_registry_path).where(
         F.col("date_lifted").isNull()
     )
 
-    assert df_res.count() == 3
-
-
-def test_clear_fileregistry_start(spark, base_test_dir, mocked_s3_bucket_name):
-    # ARRANGE
-    file_registry = S3FullScan(f"{base_test_dir}fileregistry", spark)
-
-    df = spark.createDataFrame(
-        [
-            ("s3://mybucket/raw/file1.json", None),
-            ("s3://mybucket/raw/file2.json", datetime(2021, 11, 18)),
-            ("s3://mybucket/raw/file3.json", datetime(2021, 11, 19)),
-        ],
-        ["file_path", "date_lifted"],
-    )
-    df.write.save(file_registry.file_registry_path, format="delta", mode="append")
-
-    # ACT
-    file_registry.clear(start=datetime(2021, 11, 19))
-
-    # ASSERT
-    df_res = spark.read.load(file_registry.file_registry_path).where(
-        F.col("date_lifted").isNull()
-    )
-
-    assert df_res.count() == 2
-
-
-def test_clear_fileregistry_timestamp(spark, base_test_dir, mocked_s3_bucket_name):
-    # ARRANGE
-    file_registry = S3FullScan(f"{base_test_dir}fileregistry", spark)
-
-    df = spark.createDataFrame(
-        [
-            ("s3://mybucket/raw/file1.json", datetime(2021, 11, 19, 8, 0)),
-            ("s3://mybucket/raw/file2.json", datetime(2021, 11, 19, 10, 0)),
-            ("s3://mybucket/raw/file3.json", datetime(2021, 11, 19, 12, 0)),
-        ],
-        ["file_path", "date_lifted"],
-    )
-    df.write.save(file_registry.file_registry_path, format="delta", mode="append")
-
-    # ACT
-    file_registry.clear(
-        start=datetime(2021, 11, 19, 9), stop=datetime(2021, 11, 19, 11)
-    )
-
-    # ASSERT
-    df_res = spark.read.load(file_registry.file_registry_path)
-
-    result = {row["file_path"]: row["date_lifted"] for row in df_res.collect()}
-
-    assert result["s3://mybucket/raw/file1.json"] == datetime(2021, 11, 19, 8, 0)
-    assert result["s3://mybucket/raw/file2.json"] is None
-    assert result["s3://mybucket/raw/file3.json"] == datetime(2021, 11, 19, 12, 0)
+    assert df_res.count() == expected

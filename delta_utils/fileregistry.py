@@ -68,6 +68,7 @@ class S3FullScan:
             f"UPDATE delta.`{self.file_registry_path}`",
             "SET date_lifted = NULL",
         ]
+
         conditions = []
         if start:
             conditions.append(f"date_lifted >= '{start:%Y-%m-%d %H:%M:%S}'")
