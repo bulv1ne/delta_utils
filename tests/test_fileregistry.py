@@ -99,19 +99,22 @@ def test_update_fileregistry_single(spark, base_test_dir, mocked_s3_bucket_name)
 
 
 @pytest.mark.parametrize(
-    "start, stop, expected",
+    "start, stop, expected_null_file_numbers",
     [
-        (None, None, 7),
-        (datetime(2021, 11, 19), None, 6),
-        (datetime(2021, 11, 19, 10, 0), None, 5),
-        (datetime(2021, 11, 19, 10, 0), datetime(2021, 11, 19, 11), 2),
-        (datetime(2021, 11, 19), datetime(2021, 11, 20), 5),
-        (None, datetime(2021, 11, 19, 10, 0), 4),
+        (None, None, {1, 2, 3, 4, 5, 6, 7}),
+        (datetime(2021, 11, 19), None, {1, 3, 4, 5, 6, 7}),
+        (datetime(2021, 11, 19, 10, 0), None, {1, 4, 5, 6, 7}),
+        (datetime(2021, 11, 19, 10, 0), datetime(2021, 11, 19, 11), {1, 4}),
+        (datetime(2021, 11, 19), datetime(2021, 11, 20), {1, 3, 4, 5, 6}),
+        (None, datetime(2021, 11, 19, 10, 0), {1, 2, 3, 4}),
     ],
 )
 def test_clear_fileregistry_all(
-    start, stop, expected, spark, base_test_dir, mocked_s3_bucket_name
+    start, stop, expected_null_file_numbers, spark, base_test_dir
 ):
+    expected_null_files = {
+        f"s3://mybucket/raw/file{i}.json" for i in expected_null_file_numbers
+    }
     # ARRANGE
     file_registry = S3FullScan(f"{base_test_dir}fileregistry", spark)
 
@@ -137,4 +140,5 @@ def test_clear_fileregistry_all(
         F.col("date_lifted").isNull()
     )
 
-    assert df_res.count() == expected
+    result = {row.file_path for row in df_res.collect()}
+    assert result == expected_null_files
