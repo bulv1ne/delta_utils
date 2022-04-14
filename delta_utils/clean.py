@@ -1,23 +1,23 @@
 import re
+from typing import List
 
-from pyspark.sql import types as T
+from pyspark.sql import SparkSession, types as T
 
 invalid_chars = r'[\[\]\(\)\.\s"\,\;\{\}\-\ :]'
 
 
-def replace_invalid_column_char(col_name, replacer="_"):
-    # Invalid chars: " ,;{}()[]
+def replace_invalid_column_char(col_name: str, replacer: str = "_") -> str:
     return re.sub(invalid_chars, replacer, col_name)
 
 
-def surround_field(name):
+def surround_field(name: str) -> str:
     if re.search(invalid_chars, name):
         return f"`{name}`"
 
     return name
 
 
-def flatten_schema(schema, prefix=None):
+def flatten_schema(schema: T.StructType, prefix: str = None) -> List[str]:
     fields = []
 
     for field in schema.fields:
@@ -33,7 +33,7 @@ def flatten_schema(schema, prefix=None):
     return fields
 
 
-def rename_flatten_schema(fields):
+def rename_flatten_schema(fields: List[str]) -> List[str]:
     new_fields = []
 
     for field in fields:
@@ -49,7 +49,17 @@ def rename_flatten_schema(fields):
     return new_fields
 
 
-def flatten(df):
-    fields = rename_flatten_schema(flatten_schema(df.schema))
+def flatten(df: SparkSession) -> SparkSession:
+    """
+    Will take a nested dataframe and flatten it out.
 
-    return df.selectExpr(*fields)
+    Args:
+        df (SparkSession): The dataframe you want to flatten
+
+    Returns:
+        SparkSession: Returns a flatter dataframe
+
+    """
+    fields = rename_flatten_schema(flatten_schema(df.schema))  # type: ignore
+
+    return df.selectExpr(*fields)  # type: ignore
