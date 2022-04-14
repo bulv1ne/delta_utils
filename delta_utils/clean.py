@@ -1,7 +1,8 @@
 import re
 from typing import List
 
-from pyspark.sql import SparkSession, types as T
+from pyspark.sql import types as T
+from pyspark.sql.dataframe import DataFrame
 
 invalid_chars = r'[\[\]\(\)\.\s"\,\;\{\}\-\ :]'
 
@@ -49,17 +50,17 @@ def rename_flatten_schema(fields: List[str]) -> List[str]:
     return new_fields
 
 
-def flatten(df: SparkSession) -> SparkSession:
+def flatten(df: DataFrame) -> DataFrame:
     """
     Will take a nested dataframe and flatten it out.
 
     Args:
-        df (SparkSession): The dataframe you want to flatten
+        df (DataFrame): The dataframe you want to flatten
 
     Returns:
-        SparkSession: Returns a flatter dataframe
+        DataFrame: Returns a flatter dataframe
 
     """
-    fields = rename_flatten_schema(flatten_schema(df.schema))  # type: ignore
+    fields = rename_flatten_schema(flatten_schema(df.schema))
 
-    return df.selectExpr(*fields)  # type: ignore
+    return df.selectExpr(*fields)
