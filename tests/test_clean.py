@@ -34,6 +34,8 @@ def test_flatten_table(spark):
                 ),
             ),
             T.StructField("id", T.StringType(), True),
+            T.StructField("dupli,cate", T.StringType(), True),
+            T.StructField("dupli;cate", T.StringType(), True),
             T.StructField("ge n(de-r", T.StringType(), True),
             T.StructField("sa;lar)y", T.IntegerType(), True),
         ]
@@ -44,14 +46,25 @@ def test_flatten_table(spark):
             ("Linus", "123", "456", "Wallin", "W2", ("asd",)),
             [(True,)],
             "1",
+            "asd",
+            "asd2",
             "Unknown",
             4,
         ),
-        (("Niels", "123", "768", "Lemmens", "L2", ("asd",)), [(True,)], "2", "Man", 3),
+        (
+            ("Niels", "123", "768", "Lemmens", "L2", ("asd",)),
+            [(True,)],
+            "2",
+            "asd",
+            "asd2",
+            "Man",
+            3,
+        ),
     ]
 
     df = spark.createDataFrame(data, schema)
-    flatten(df) == [
+    columns = flatten(df).columns
+    assert columns == [
         "name_first_name",
         "name_id",
         "name_ID",
@@ -60,6 +73,8 @@ def test_flatten_table(spark):
         "name_nested_test_sfd",
         "items",
         "id",
+        "dupli_cate_2",
+        "dupli_cate_1",
         "ge_n_de_r",
         "sa_lar_y",
     ]
