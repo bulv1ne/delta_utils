@@ -72,12 +72,11 @@ def test_invalid_col_names_raise_error(spark):
 
     df = spark.createDataFrame(data, schema)
 
-    with pytest.raises(Exception) as error:
+    with pytest.raises(
+        ValueError,
+        match="Found duplicates columns when renaming invalid columns: dupli59cate",
+    ):
         fix_invalid_column_names(df)
-
-    assert "Found duplicates columns when renaming invalid columns: dupli59cate" in str(
-        error
-    )
 
 
 def test_flatten_table(spark):
@@ -187,7 +186,8 @@ def test_flatten_table_raise_error(spark):
 
     df = spark.createDataFrame(data, schema)
 
-    with pytest.raises(Exception) as error:
+    with pytest.raises(
+        ValueError,
+        match="Could not rename column name.id to name_id, because name_id already exists",
+    ):
         flatten(df)
-
-    assert "Found duplicates columns when flattening: name_id" in str(error)
