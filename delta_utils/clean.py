@@ -38,6 +38,9 @@ def flatten_schema(schema: T.StructType, prefix: str = None) -> List[str]:
 
 
 def rename_flatten_schema(fields: List[str]):
+    valid_original_fields = [
+        field.replace("`", "") for field in fields if "." not in field
+    ]
     new_fields = []
 
     for field in fields:
@@ -45,6 +48,11 @@ def rename_flatten_schema(fields: List[str]):
             new_col = field.replace(".", "_").replace("`", "")
 
             new_fields.append((field, new_col))
+            # Check if the new column already exists
+            if new_col in valid_original_fields:
+                raise ValueError(
+                    f"Could not rename column {field} to {new_col}, because {new_col} already exists"
+                )
         else:
             new_col = field.replace("`", "")
             new_fields.append((field, new_col))
@@ -56,7 +64,7 @@ def check_duplicates(columns: List[str], error_message: str) -> None:
     duplicate_columns = [k for k, v in Counter(columns).items() if v > 1]
 
     if duplicate_columns:
-        raise Exception(
+        raise ValueError(
             f"{error_message}: {', '.join(duplicate_columns)}",
         )
 
