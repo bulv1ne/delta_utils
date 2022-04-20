@@ -5,8 +5,6 @@ repo_url: https://github.com/bulv1ne/delta_utils
 docs_dir: docs
 nav:
     - Home: 'README.md'
-    # defer to gen-files + literate-nav
-    - Code Reference: reference/
     - 'User Guide':
       - 'usage.md'
       - 'clean.md'
