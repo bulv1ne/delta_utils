@@ -1,6 +1,6 @@
 import re
 from collections import Counter
-from typing import Dict, List, Tuple
+from typing import List
 
 from pyspark.sql import types as T
 from pyspark.sql.dataframe import DataFrame
@@ -9,7 +9,9 @@ invalid_chars = r'[\[\]\(\)\.\s"\,\;\{\}\-\ :]'
 
 
 def replace_invalid_column_char(col_name: str, replacer: str = "_") -> str:
-    return re.sub(invalid_chars, replacer, col_name)
+    return re.sub(
+        invalid_chars, lambda x: "_".join(str(ord(c)) for c in x.group()), col_name
+    )
 
 
 def surround_field(name: str) -> str:
@@ -35,45 +37,50 @@ def flatten_schema(schema: T.StructType, prefix: str = None) -> List[str]:
     return fields
 
 
-def rename_flatten_schema(fields: List[str]) -> List[Tuple[str, str]]:
+def rename_flatten_schema(fields: List[str]):
     new_fields = []
 
     for field in fields:
         if "." in field:
-            new_col = replace_invalid_column_char(
-                field.replace(".", "_").replace("`", "")
-            )
+            new_col = field.replace(".", "_").replace("`", "")
+
             new_fields.append((field, new_col))
         else:
-            new_col = replace_invalid_column_char(field.replace("`", ""))
+            new_col = field.replace("`", "")
             new_fields.append((field, new_col))
 
     return new_fields
 
 
-def get_duplicates(fields: List[Tuple[str, str]]) -> Dict[str, int]:
-    # Create a flat list of all new column names
-    new_fields = [field[1] for field in fields]
+def check_duplicates(columns: List[str], error_message: str) -> None:
+    duplicate_columns = [k for k, v in Counter(columns).items() if v > 1]
 
-    # Count the number of occurences in the list
-    occurences = dict(Counter(new_fields))
-
-    # Retrun only the once that occur more than once
-    return {k: v for k, v in occurences.items() if v > 1}
+    if duplicate_columns:
+        raise Exception(
+            f"{error_message}: {', '.join(duplicate_columns)}",
+        )
 
 
-def rename_duplicates(fields: List[Tuple[str, str]]):
-    duplicates = get_duplicates(fields)
-    new_fields = []
+def fix_invalid_column_names(df: DataFrame) -> DataFrame:
+    """
+    Will replace all invalid spark characters in columns names with ascii numbers
 
-    for old_name, new_name in fields:
-        if new_name in duplicates.keys():
-            new_fields.append((old_name, f"{new_name}_{duplicates[new_name]}"))
-            duplicates[new_name] = duplicates[new_name] - 1
-        else:
-            new_fields.append((old_name, new_name))
+    Args:
+        df (DataFrame): The dataframe with invalid column names
 
-    return new_fields
+    Returns:
+        DataFrame: Returns a dataframe that has no invalid column names
+
+    """
+    new_fields = [
+        (column, replace_invalid_column_char(column)) for column in df.columns
+    ]
+    check_duplicates(
+        [new for old, new in new_fields],
+        "Found duplicates columns when renaming invalid columns",
+    )
+
+    return df.selectExpr([f"`{k}` as `{v}`" for k, v in new_fields])
 
 
 def flatten(df: DataFrame) -> DataFrame:
@@ -87,7 +94,10 @@ def flatten(df: DataFrame) -> DataFrame:
         DataFrame: Returns a flatter dataframe
 
     """
-    fields = rename_duplicates(rename_flatten_schema(flatten_schema(df.schema)))
+    fields = rename_flatten_schema(flatten_schema(df.schema))
     fields = [f"{k} as `{v}`" for k, v in fields]
 
-    return df.selectExpr(*fields)
+    df = df.selectExpr(*fields)
+    check_duplicates(df.columns, "Found duplicates columns when flattening")
+
+    return df
