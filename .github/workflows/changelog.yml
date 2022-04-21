@@ -9,6 +9,6 @@ jobs:
     name: Check Changelog Action
     runs-on: ubuntu-latest
     steps:
-      - uses: bulv1ne/changelog-check-action@4d8e41be2df5187e5dfd8a39535098914217417c
+      - uses: bulv1ne/changelog-check-action@6e24aa4892511a3b76bad7c82c174a6610d95e88
         with:
-          changelog-file: CHANGELOG.md
+          changelog_file: CHANGELOG.md
