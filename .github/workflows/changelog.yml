@@ -7,7 +7,7 @@ on:
 jobs:
   check-changelog:
     name: Check Changelog Action
-    runs-on: ubuntu
+    runs-on: ubuntu-latest
     steps:
       - uses: bulv1ne/changelog-check-action@4d8e41be2df5187e5dfd8a39535098914217417c
         with:
